@@ -1,0 +1,92 @@
+---
+title: "IR_HW3"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE}
+#install.packages("sjPlot")
+library(sjPlot)
+#install.packages("ggplot2")
+library(ggplot2)
+#install.packages("tidyverse")
+library(tidyverse)
+#install.packages("Rmisc")
+library(Rmisc)
+#install.packages("dplyr")
+library(dplyr)
+#install.packages("gtsummary")
+library(gtsummary)
+
+```
+
+**Load data**
+```{r}
+HW3 <- read.csv("https://raw.githubusercontent.com/IsaacRaymundo/ResearchMethods-HW3/main/sports-and-education.csv")
+HW3$Ranked.2017 <- as.factor(HW3$Ranked.2017)
+
+```
+
+**Create Balance Table**
+```{r}
+
+tbl <- HW3 %>%
+  select(Ranked.2017,Academic.Quality,Athletic.Quality,Near.Big.Market)%>%
+  tbl_summary(by = "Ranked.2017", 
+              label = list( Academic.Quality ~ "Academic Quality",Athletic.Quality ~ "Athletic Quality", Near.Big.Market~ "Near Big Market"),
+              statistic = list(all_continuous() ~ "{mean} ({sd})"))%>%
+  modify_header(update = c("stat_1" ~ "**No**", "stat_2"~"**Yes**","label" ~ "**Covariates**"))%>%
+   modify_spanning_header(c("stat_1", "stat_2") ~ "**Ranked in 2017**")%>%
+  add_p()%>%
+  modify_caption("**Table 1. Balance Table**")
+
+tbl
+
+```
+
+**Create propensity score model and table**
+```{r}
+m_ps <- glm(Ranked.2017 ~ Academic.Quality + Athletic.Quality + Near.Big.Market,
+            family = binomial(), data = HW3);summary(m_ps)
+
+tab_model(m_ps,title = "Table 2: Propensity score model", dv.labels = "Ranked",pred.labels = c("(Intercept)","Academic Quality", "Athletic Quality", "Near Big Market") ,collapse.se = T,show.ci = F,CSS = list(css.depvarhead = "no-italics;text-align:center; font-style:normal; font-weight:bold; padding:0.2cm;border-top: double;",css.thead= "no-italics; text-align:center; font-style:normal; font-weight:bold; padding:0.2cm;", css.caption = "text-align:center;font-weight:bold;padding-bottom:0.1cm;" ),string.pred = "Variable",p.style = "star", transform = NULL)
+```
+
+**Make Overlapping Histogram**
+```{r}
+HW3$pr_score <- predict(m_ps, type = "response")
+
+HW3 %>%
+  ggplot(aes(x = pr_score, fill = Ranked.2017)) +
+  geom_histogram(color = "white",bins = 32) +
+  xlab("Probability of being ranked")+
+  theme_classic()+
+  scale_fill_hue(name = "Ranked",labels = c("No","Yes"))+
+  coord_cartesian(ylim = c(0,7))+
+  scale_y_continuous(name="Count",expand = c(0, 0),
+                     limits = c(0,7))
+
+```
+
+**Block Propensity scores**
+```{r, warning=FALSE}
+
+HW3$pr_block <- ifelse(HW3$pr_score<=quantile(HW3$pr_score)[2],1,ifelse(HW3$pr_score<=quantile(HW3$pr_score)[3],2,ifelse(HW3$pr_score<=quantile(HW3$pr_score)[4],3,ifelse(HW3$pr_score<=quantile(HW3$pr_score)[5],4,NA))))
+
+```
+
+**Analyze treatment effect of being ranked on donations with and without fixed effects and covariates**
+```{r}
+lm1 <- lm(Alumni.Donations.2018~Ranked.2017,HW3);summary(lm1)
+
+lm2 <- lm(Alumni.Donations.2018~Ranked.2017+as.factor(pr_block)+Academic.Quality+Athletic.Quality+as.factor(Near.Big.Market),HW3);summary(lm2)
+
+
+```
+**Make table of regressions with fixed effects**
+```{r}
+
+tab_model(lm1,lm2,title = "Table 3: Effect of Being Ranked on Donations",pred.labels = c("(Intercept)","Ranked", "Academic Quality","Athletic Quality","Near Big Market"),terms = c("(Intercept)","Ranked.20171", "Academic.Quality","Athletic.Quality","as.factor(Near.Big.Market)1"),dv.labels = c("Model 1", "Model 2") ,collapse.se = T,show.ci = F,CSS = list(css.depvarhead = "no-italics;text-align:center; font-style:normal; font-weight:bold; padding:0.2cm;border-top: double;",css.thead= "no-italics; text-align:center; font-style:normal; font-weight:bold; padding:0.2cm;", css.caption = "text-align:center;font-weight:bold;padding-bottom:0.1cm;" ),string.pred = "Variable",p.style = "star")
+
+```
